@@ -10,3 +10,5 @@ Add some news about each of them via API.
 Send emails and SMS. 10 minutes before the market is opened.
 
 Add parameters to the app via argparse with help so there would be options.
+
+Add types and docstrings.

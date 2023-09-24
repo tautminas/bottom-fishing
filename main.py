@@ -25,7 +25,6 @@ def get_stocks_losers():
     df['% Change'] = pd.to_numeric(df['% Change'].str.replace('%', ''), errors='coerce')
     columns_to_drop = ['Change', 'Volume', 'Avg Vol (3 month)', 'Market Cap', 'PE Ratio (TTM)', '52 Week Range']
     df = df.drop(columns=columns_to_drop)
-    df = df[df['% Change'] < -5]
     return df
 
 
@@ -37,7 +36,10 @@ def get_price_book(symbol):
     stats_page = response.text
     stats_soup = BeautifulSoup(stats_page, 'html.parser')
     price_book = stats_soup.select_one("div:nth-child(1) > div > div > div > div > table > tbody > tr:nth-child(7)")
-    price_book = float(price_book.get_text().replace("Price/Book (mrq)", ""))
+    price_book = price_book.get_text().replace("Price/Book (mrq)", "")
+    if price_book == "N/A":
+        return None
+    price_book = float(price_book)
     return price_book
 
 
@@ -58,15 +60,21 @@ def get_recommendation_rating(symbol):
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(2)
     soup = BeautifulSoup(driver.page_source, 'html.parser')
-    element = soup.find("div", {"data-test": "rec-rating-txt"})
-    return element.get_text()
+    recommendation_rating = soup.find("div", {"data-test": "rec-rating-txt"})
+    if recommendation_rating is None:
+        return None
+    recommendation_rating = float(recommendation_rating.get_text())
+    return recommendation_rating
 
 
 if __name__ == "__main__":
     df_losers = get_stocks_losers()
-    biggest_l = df_losers['Symbol'][0]
-    pb = get_price_book(biggest_l)
-    recommendation_rating = get_recommendation_rating(biggest_l)
+    df_losers = df_losers[df_losers['% Change'] < -5]
+    df_losers['Price/Book'] = df_losers['Symbol'].apply(get_price_book)
+    print("Frame has scraped P/B values.")
+    df_losers = df_losers[df_losers["Price/Book"] > df_losers["Price (Intraday)"]]
+    df_losers['Recommendation'] = df_losers['Symbol'].apply(get_recommendation_rating)
+    print("Frame has scraped rating values.")
+    df_losers = df_losers.sort_values(by='Recommendation', ascending=True, na_position='last')
+    pd.set_option('display.max_columns', None)
     print(df_losers)
-    print(pb)
-    print(recommendation_rating)

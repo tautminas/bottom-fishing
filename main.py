@@ -9,13 +9,23 @@ from selenium.webdriver.chrome.options import Options
 import time
 import os
 import argparse
+import smtplib
+from twilio.rest import Client
 
 parser = argparse.ArgumentParser(description='A script for getting information for "bottom fishing" investment strategy.')
-parser.add_argument('--news', action='store_true', help='Enable getting three news related to the strongest recommendation of the script. Keep in mind that "NEWS_API_KEY" has to be defined as an environment variable. To get the API key go to https://newsapi.org and create an account.')
+parser.add_argument('--news', action='store_true', help='Get up to three news related to the strongest recommendation of the script. Keep in mind that "NEWS_API_KEY" has to be defined as an environment variable. To get the API key go to https://newsapi.org and create an account.')
+parser.add_argument('--email', action='store_true', help='Get email with recommendations.')
+parser.add_argument('--sms', action='store_true', help='Get SMS with recommendations.')
 args = parser.parse_args()
 
 NEWS_ENDPOINT = "https://newsapi.org/v2/everything"
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
+MY_EMAIL = os.environ.get("MY_EMAIL")
+MY_EMAIL_PASSWORD = os.environ.get("MY_EMAIL_PASSWORD")
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_ACCOUNT_AUTH_TOKEN = os.environ.get("TWILIO_ACCOUNT_AUTH_TOKEN")
+FROM_NUMBER = os.environ.get("FROM_NUMBER")
+TO_NUMBER = os.environ.get("TO_NUMBER")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/58.0.3029.110 Safari/537.36"
@@ -96,7 +106,8 @@ def get_recommendation_rating(symbol: str) -> float | None:
     options = Options()
     # options.add_experimental_option('detach', True) # Uncomment this line for avoiding window closure
     options.add_argument("--headless")
-    driver = webdriver.Chrome(options=options)
+    options.add_experimental_option("excludeSwitches", ["enable-logging"])
+    driver = webdriver.Chrome(options=options, )
     url = f"https://finance.yahoo.com/quote/{symbol}/analysis?p={symbol}"
     driver.get(url)
     time.sleep(1)
@@ -137,7 +148,7 @@ def get_news(name: str) -> list[str]:
     news_response = requests.get(NEWS_ENDPOINT, params=news_params)
     news_response.raise_for_status()
     three_articles = news_response.json()["articles"][:3]
-    formatted_articles = [f"Headline: {article['title']}\n" \
+    formatted_articles = [f"Headline: {article['title']}\n"
                           f"Brief: {article['description']}" for article in three_articles]
     return formatted_articles
 
@@ -160,3 +171,24 @@ if __name__ == "__main__":
         news = get_news(main_recommendation_name)
         for news_item in news:
             print(news_item)
+
+    if args.email:
+        recommended_symbols = df_losers['Symbol'].tolist()
+        with smtplib.SMTP("smtp.gmail.com", port=587) as connection:
+            connection.starttls()
+            connection.login(MY_EMAIL, MY_EMAIL_PASSWORD)
+            connection.sendmail(
+                from_addr=MY_EMAIL,
+                to_addrs=MY_EMAIL,
+                msg=f"Subject:Recommendations for further investigation\n\nSymbols: {', '.join(recommended_symbols)}"
+            )
+
+    if args.sms:
+        recommended_symbols = df_losers['Symbol'].tolist()
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_ACCOUNT_AUTH_TOKEN)
+        message = client.messages.create(
+            body=f"Recommendations for further investigation: {', '.join(recommended_symbols)}",
+            from_=FROM_NUMBER,
+            to=TO_NUMBER
+        )
+        print(message.status)

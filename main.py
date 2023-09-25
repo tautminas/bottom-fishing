@@ -7,14 +7,35 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 import time
+import os
+import argparse
 
+parser = argparse.ArgumentParser(description='A script for getting information for "bottom fishing" investment strategy.')
+parser.add_argument('--news', action='store_true', help='Enable getting three news related to the strongest recommendation of the script. Keep in mind that "NEWS_API_KEY" has to be defined as an environment variable. To get the API key go to https://newsapi.org and create an account.')
+args = parser.parse_args()
+
+NEWS_ENDPOINT = "https://newsapi.org/v2/everything"
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/58.0.3029.110 Safari/537.36"
 }
 
 
-def get_stocks_losers():
+def get_stocks_losers() -> pd.DataFrame | None:
+    """
+        Fetches the list of top stock losers from Yahoo Finance and returns the data as a pandas DataFrame.
+
+        Returns:
+            pd.DataFrame | None: A DataFrame containing information about the top stock losers.
+                Columns include 'Symbol', 'Name', 'Price (Intraday)', and '% Change'.
+                The '% Change' column is converted to numeric values without the '%' sign.
+                Returns None if there was an issue with the web request or if the data is not available.
+
+        Note:
+            This function scrapes the Yahoo Finance website, so its functionality
+            may be affected if the website structure changes.
+    """
     response = requests.get("https://finance.yahoo.com/losers?count=100", headers=HEADERS)
     yahoo_finance_web_page = response.text
     if str(response.status_code)[0] != "2":
@@ -28,7 +49,21 @@ def get_stocks_losers():
     return df
 
 
-def get_price_book(symbol):
+def get_price_book(symbol: str) -> float | None:
+    """
+        Fetches the price-to-book (P/B) ratio for a specified stock symbol from Yahoo Finance.
+
+        Args:
+            symbol (str): The stock symbol for which to retrieve the P/B ratio.
+
+        Returns:
+            float | None: The price-to-book (P/B) ratio of the specified stock symbol.
+                Returns None if the ratio is not available or if there was an issue with the request.
+
+        Note:
+            This function scrapes Yahoo Finance's key statistics page for the P/B ratio.
+            It may return None if the P/B ratio is not available or if the website structure changes.
+    """
     url = f"https://finance.yahoo.com/quote/{symbol}/key-statistics?p={symbol}"
     response = requests.get(url, headers=HEADERS)
     if str(response.status_code)[0] != "2":
@@ -43,7 +78,21 @@ def get_price_book(symbol):
     return price_book
 
 
-def get_recommendation_rating(symbol):
+def get_recommendation_rating(symbol: str) -> float | None:
+    """
+        Retrieves the recommendation rating for a specified stock symbol from Yahoo Finance.
+
+        Args:
+            symbol (str): The stock symbol for which to retrieve the recommendation rating.
+
+        Returns:
+            float | None: The recommendation rating of the specified stock symbol.
+                Returns None if the rating is not available or if there was an issue with the web scraping.
+
+        Note:
+            This function uses a headless web browser (Chrome) to access Yahoo Finance's analysis page for the rating.
+            It may return None if the rating is not found or if there are changes in the website structure.
+    """
     options = Options()
     # options.add_experimental_option('detach', True) # Uncomment this line for avoiding window closure
     options.add_argument("--headless")
@@ -67,6 +116,32 @@ def get_recommendation_rating(symbol):
     return recommendation_rating
 
 
+def get_news(name: str) -> list[str]:
+    """
+    Get the top three news articles containing the specified keyword in the title.
+
+    Args:
+        name (str): The keyword to search for in news article titles.
+
+    Returns:
+        list[str]: A list of formatted news articles containing headline and brief.
+
+    Raises:
+        requests.exceptions.RequestException: If there is an issue with the HTTP request.
+        ValueError: If the API key or endpoint is not properly configured.
+    """
+    news_params = {
+        "apiKey": NEWS_API_KEY,
+        "qInTitle": name,
+    }
+    news_response = requests.get(NEWS_ENDPOINT, params=news_params)
+    news_response.raise_for_status()
+    three_articles = news_response.json()["articles"][:3]
+    formatted_articles = [f"Headline: {article['title']}\n" \
+                          f"Brief: {article['description']}" for article in three_articles]
+    return formatted_articles
+
+
 if __name__ == "__main__":
     df_losers = get_stocks_losers()
     df_losers = df_losers[df_losers['% Change'] < -5]
@@ -78,3 +153,10 @@ if __name__ == "__main__":
     df_losers = df_losers.sort_values(by='Recommendation', ascending=True, na_position='last')
     pd.set_option('display.max_columns', None)
     print(df_losers)
+
+    if args.news:
+        main_recommendation_name = df_losers['Name'].iloc[0]
+        print(main_recommendation_name)
+        news = get_news(main_recommendation_name)
+        for news_item in news:
+            print(news_item)

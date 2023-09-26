@@ -14,6 +14,7 @@ from twilio.rest import Client
 from tqdm import tqdm
 from pandas import Series
 from typing import Any
+import sys
 
 
 parser = argparse.ArgumentParser(description='A script for getting information for "bottom fishing" investment strategy.')
@@ -209,12 +210,20 @@ if __name__ == "__main__":
     df_losers = get_stocks_losers()
     df_losers = df_losers[df_losers['% Change'] < -5]
 
+    if df_losers.empty:
+        print("No stock losers found that satisfy the change threshold condition. Exiting.")
+        sys.exit()
+
     print("Fetching Price/Book values:")
     time.sleep(1)
     tqdm_pbar = tqdm(total=len(df_losers))
     df_losers['Price/Book'] = df_losers.apply(apply_get_price_book, axis=1)
     tqdm_pbar.close()
     df_losers = df_losers[df_losers["Price/Book"] > df_losers["Price (Intraday)"]]
+
+    if df_losers.empty:
+        print("No stock losers found that satisfy the Price/Book condition. Exiting.")
+        sys.exit()
 
     print("Fetching recommendation ratings:")
     time.sleep(1)
@@ -224,6 +233,11 @@ if __name__ == "__main__":
 
     df_losers = df_losers.sort_values(by='Recommendation', ascending=True, na_position='last')
     df_losers = df_losers[df_losers['Recommendation'].isna() | (df_losers['Recommendation'] < 2.5)]
+
+    if df_losers.empty:
+        print("No stock losers found that satisfy the recommendation condition. Exiting.")
+        sys.exit()
+
     df_losers['Link'] = df_losers['Symbol'].apply(get_symbol_yahoo_link)
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', 1000)

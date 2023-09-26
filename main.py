@@ -11,6 +11,9 @@ import os
 import argparse
 import smtplib
 from twilio.rest import Client
+from tqdm import tqdm
+from pandas import Series
+from typing import Any
 
 
 parser = argparse.ArgumentParser(description='A script for getting information for "bottom fishing" investment strategy.')
@@ -66,18 +69,18 @@ def get_stocks_losers() -> pd.DataFrame | None:
 
 def get_price_book(symbol: str) -> float | None:
     """
-        Fetches the price-to-book (P/B) ratio for a specified stock symbol from Yahoo Finance.
+        Fetches the price-to-book (P/B) value for a specified stock symbol from Yahoo Finance.
 
         Args:
-            symbol (str): The stock symbol for which to retrieve the P/B ratio.
+            symbol (str): The stock symbol for which to retrieve the P/B value.
 
         Returns:
-            float | None: The price-to-book (P/B) ratio of the specified stock symbol.
-                Returns None if the ratio is not available or if there was an issue with the request.
+            float | None: The price-to-book (P/B) value of the specified stock symbol.
+                Returns None if the value is not available or if there was an issue with the request.
 
         Note:
-            This function scrapes Yahoo Finance's key statistics page for the P/B ratio.
-            It may return None if the P/B ratio is not available or if the website structure changes.
+            This function scrapes Yahoo Finance's key statistics page for the P/B value.
+            It may return None if the P/B value is not available or if the website structure changes.
     """
     url = f"https://finance.yahoo.com/quote/{symbol}/key-statistics?p={symbol}"
     response = requests.get(url, headers=HEADERS)
@@ -158,19 +161,75 @@ def get_news(name: str) -> list[str]:
     return formatted_articles
 
 
+def apply_get_price_book(row: Series) -> Any:
+    """
+    Apply the 'get_price_book' function to retrieve a price-to-book value for a financial symbol.
+
+    Parameters:
+        row (dict): A dictionary containing financial data with a 'Symbol' key.
+
+    Returns:
+        Any: The result of calling the 'get_price_book' function on the symbol in the provided row.
+    """
+    result = get_price_book(row['Symbol'])
+    tqdm_pbar.update(1)
+    return result
+
+
+def apply_get_recommendation(row: Series) -> Any:
+    """
+    Apply the 'get_recommendation_rating' function to retrieve a recommendation rating for a financial symbol.
+
+    Parameters:
+        row (pandas.Series): A pandas Series containing financial data with a 'Symbol' column.
+
+    Returns:
+        Any: The result of calling the 'get_recommendation_rating' function on the symbol in the provided row.
+    """
+    result = get_recommendation_rating(row['Symbol'])
+    tqdm_pbar.update(1)
+    return result
+
+
+def get_symbol_yahoo_link(symbol: str) -> str:
+    """
+    Generate a URL link for a financial symbol on Yahoo Finance.
+
+    Parameters:
+        symbol (str): The financial symbol for which the link is generated.
+
+    Returns:
+        str: A URL link to the Yahoo Finance page for the specified symbol.
+    """
+    return f"https://finance.yahoo.com/quote/{symbol}?p={symbol}"
+
+
 if __name__ == "__main__":
     print(LOGO)
     df_losers = get_stocks_losers()
     df_losers = df_losers[df_losers['% Change'] < -5]
-    df_losers['Price/Book'] = df_losers['Symbol'].apply(get_price_book)
-    print("Frame has scraped P/B values.")
+
+    print("Fetching Price/Book values:")
+    time.sleep(1)
+    tqdm_pbar = tqdm(total=len(df_losers))
+    df_losers['Price/Book'] = df_losers.apply(apply_get_price_book, axis=1)
+    tqdm_pbar.close()
     df_losers = df_losers[df_losers["Price/Book"] > df_losers["Price (Intraday)"]]
-    df_losers['Recommendation'] = df_losers['Symbol'].apply(get_recommendation_rating)
-    print("Frame has scraped rating values.")
+
+    print("Fetching recommendation ratings:")
+    time.sleep(1)
+    tqdm_pbar = tqdm(total=len(df_losers))
+    df_losers['Recommendation'] = df_losers.apply(apply_get_recommendation, axis=1)
+    tqdm_pbar.close()
+
     df_losers = df_losers.sort_values(by='Recommendation', ascending=True, na_position='last')
     df_losers = df_losers[df_losers['Recommendation'].isna() | (df_losers['Recommendation'] < 2.5)]
+    df_losers['Link'] = df_losers['Symbol'].apply(get_symbol_yahoo_link)
     pd.set_option('display.max_columns', None)
-    print(df_losers)
+    pd.set_option('display.width', 1000)
+    print("The script has finished fetching and processing the data. "
+          "Here is the table of recommendations for further investigation:")
+    print(df_losers.to_string(index=False))
 
     if args.news:
         main_recommendation_name = df_losers['Name'].iloc[0]

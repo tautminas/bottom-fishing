@@ -12,6 +12,7 @@ import argparse
 import smtplib
 from twilio.rest import Client
 
+
 parser = argparse.ArgumentParser(description='A script for getting information for "bottom fishing" investment strategy.')
 parser.add_argument('--news', action='store_true', help='Get up to three news related to the strongest recommendation of the script. Keep in mind that "NEWS_API_KEY" has to be defined as an environment variable. To get the API key go to https://newsapi.org and create an account.')
 parser.add_argument('--email', action='store_true', help='Get email with recommendations.')
@@ -30,6 +31,10 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/58.0.3029.110 Safari/537.36"
 }
+LOGO = """
+ ██▄ ▄▀▄ ▀█▀ ▀█▀ ▄▀▄ █▄ ▄█   █▀ █ ▄▀▀ █▄█ █ █▄ █ ▄▀ 
+ █▄█ ▀▄▀  █   █  ▀▄▀ █ ▀ █   █▀ █ ▄██ █ █ █ █ ▀█ ▀▄█
+"""
 
 
 def get_stocks_losers() -> pd.DataFrame | None:
@@ -154,6 +159,7 @@ def get_news(name: str) -> list[str]:
 
 
 if __name__ == "__main__":
+    print(LOGO)
     df_losers = get_stocks_losers()
     df_losers = df_losers[df_losers['% Change'] < -5]
     df_losers['Price/Book'] = df_losers['Symbol'].apply(get_price_book)
@@ -162,6 +168,7 @@ if __name__ == "__main__":
     df_losers['Recommendation'] = df_losers['Symbol'].apply(get_recommendation_rating)
     print("Frame has scraped rating values.")
     df_losers = df_losers.sort_values(by='Recommendation', ascending=True, na_position='last')
+    df_losers = df_losers[df_losers['Recommendation'].isna() | (df_losers['Recommendation'] < 2.5)]
     pd.set_option('display.max_columns', None)
     print(df_losers)
 

@@ -16,11 +16,22 @@ from pandas import Series
 from typing import Any
 import sys
 
-
-parser = argparse.ArgumentParser(description='A script for getting information for "bottom fishing" investment strategy.')
-parser.add_argument('--news', action='store_true', help='Get up to three news related to the strongest recommendation of the script. Keep in mind that "NEWS_API_KEY" has to be defined as an environment variable. To get the API key go to https://newsapi.org and create an account.')
-parser.add_argument('--email', action='store_true', help='Get email with recommendations.')
-parser.add_argument('--sms', action='store_true', help='Get SMS with recommendations.')
+script_description = 'A script for fetching stock recommendations (for further analysis) for the Bottom fishing ' \
+                     'investment strategy.'
+news_help = 'Get up to three news articles related to the strongest stock recommendation. ' \
+            'Please note that you need to set NEWS_API_KEY environment variable for this option. ' \
+            'Check the README.md file for more information.'
+email_help = 'Receive an email with the stock recommendations. ' \
+             'Please note that you need to set MY_EMAIL and MY_EMAIL_PASSWORD environment variables for this option. ' \
+             'Check the README.md file for more information.'
+sms_help = 'Receive an SMS with the stock recommendations. ' \
+           'Please note that you need to set TWILIO_ACCOUNT_SID, TWILIO_ACCOUNT_AUTH_TOKEN, FROM_NUMBER, ' \
+           'and TO_NUMBER environment variables for this option. ' \
+           'Check the README.md file for more information.'
+parser = argparse.ArgumentParser(description=script_description)
+parser.add_argument('--news', action='store_true', help=news_help)
+parser.add_argument('--email', action='store_true', help=email_help)
+parser.add_argument('--sms', action='store_true', help=sms_help)
 args = parser.parse_args()
 
 NEWS_ENDPOINT = "https://newsapi.org/v2/everything"
@@ -138,28 +149,32 @@ def get_recommendation_rating(symbol: str) -> float | None:
 
 def get_news(name: str) -> list[str]:
     """
-    Get the top three news articles containing the specified keyword in the title.
+    Get up to top three news articles containing the specified keyword in the title.
 
     Args:
         name (str): The keyword to search for in news article titles.
 
     Returns:
-        list[str]: A list of formatted news articles containing headline and brief.
-
-    Raises:
-        requests.exceptions.RequestException: If there is an issue with the HTTP request.
-        ValueError: If the API key or endpoint is not properly configured.
+        list[str]: Formatted news articles (headline and brief), or an empty list if no news is found.
     """
-    news_params = {
-        "apiKey": NEWS_API_KEY,
-        "qInTitle": name,
-    }
-    news_response = requests.get(NEWS_ENDPOINT, params=news_params)
-    news_response.raise_for_status()
-    three_articles = news_response.json()["articles"][:3]
-    formatted_articles = [f"Headline: {article['title']}\n"
-                          f"Brief: {article['description']}" for article in three_articles]
-    return formatted_articles
+    try:
+        news_params = {
+            "apiKey": NEWS_API_KEY,
+            "qInTitle": name,
+        }
+        news_response = requests.get(NEWS_ENDPOINT, params=news_params)
+        news_response.raise_for_status()
+        three_articles = news_response.json()["articles"][:3]
+        formatted_articles = [f"    Headline: {article['title']}\n"
+                              f"    Brief: {article['description']}" for article in three_articles]
+        return formatted_articles
+    except requests.exceptions.RequestException as e:
+        print(f"Error making the News API request: {e}")
+    except ValueError as e:
+        print(f"Error parsing JSON response: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+    return []
 
 
 def apply_get_price_book(row: Series) -> Any:
@@ -247,28 +262,42 @@ if __name__ == "__main__":
 
     if args.news:
         main_recommendation_name = df_losers['Name'].iloc[0]
-        print(main_recommendation_name)
         news = get_news(main_recommendation_name)
-        for news_item in news:
-            print(news_item)
+        if len(news) == 0:
+            print(f"There are no news about {main_recommendation_name} from the News API.")
+        else:
+            print(f"Top news about {main_recommendation_name}:")
+            for news_item in news:
+                print(f"\033[91m{news_item}\033[0m")
 
     if args.email:
-        recommended_symbols = df_losers['Symbol'].tolist()
-        with smtplib.SMTP("smtp.gmail.com", port=587) as connection:
-            connection.starttls()
-            connection.login(MY_EMAIL, MY_EMAIL_PASSWORD)
-            connection.sendmail(
-                from_addr=MY_EMAIL,
-                to_addrs=MY_EMAIL,
-                msg=f"Subject:Recommendations for further investigation\n\nSymbols: {', '.join(recommended_symbols)}"
-            )
+        try:
+            recommended_symbols = df_losers['Symbol'].tolist()
+            with smtplib.SMTP("smtp.gmail.com", port=587) as connection:
+                connection.starttls()
+                connection.login(MY_EMAIL, MY_EMAIL_PASSWORD)
+                connection.sendmail(
+                    from_addr=MY_EMAIL,
+                    to_addrs=MY_EMAIL,
+                    msg=f"Subject:Stock recommendations for further investigation\n\n"
+                        f"{df_losers.to_string(index=False, justify='center')}"
+                )
+            print("Recommendation email sent successfully.")
+        except smtplib.SMTPException as smtp_error:
+            print(f"SMTP Error: {smtp_error}")
+        except Exception as other_email_error:
+            print(f"An unexpected error occurred while sending email: {other_email_error}")
 
     if args.sms:
-        recommended_symbols = df_losers['Symbol'].tolist()
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_ACCOUNT_AUTH_TOKEN)
-        message = client.messages.create(
-            body=f"Recommendations for further investigation: {', '.join(recommended_symbols)}",
-            from_=FROM_NUMBER,
-            to=TO_NUMBER
-        )
-        print(message.status)
+        try:
+            recommended_symbols = df_losers['Symbol'].tolist()
+            client = Client(TWILIO_ACCOUNT_SID, TWILIO_ACCOUNT_AUTH_TOKEN)
+            message = client.messages.create(
+                body=f"Recommendations for further investigation regarding the Bottom fishing investing strategy: "
+                     f"{', '.join(recommended_symbols)}",
+                from_=FROM_NUMBER,
+                to=TO_NUMBER
+            )
+            print("Recommendation SMS sent successfully.")
+        except Exception as other_sms_error:
+            print(f"An error occurred while sending SMS: {other_sms_error}")

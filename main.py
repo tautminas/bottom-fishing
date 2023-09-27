@@ -2,7 +2,6 @@ from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 from io import StringIO
-import lxml
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
